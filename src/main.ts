@@ -1,4 +1,4 @@
-import {controller as part3controller} from './part3';
+import {controller as catController} from './cat_model';
 
 window.addEventListener("DOMContentLoaded", main);
 window.addEventListener('resize', onWindowResize, false);
@@ -15,12 +15,7 @@ let canvas : HTMLCanvasElement = null;
 function main() {
     canvas = document.querySelector('#main-canvas');
     const hash = window.location.hash;
-
-    if( hash == "#p3" ) {
-        mainController = part3controller;
-    } else {
-        mainController = part3controller;
-    }
+    mainController = catController;
     mainController.init();
     onWindowResize();
 }
