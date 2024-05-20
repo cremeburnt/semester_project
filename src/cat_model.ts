@@ -8,15 +8,29 @@ let canvas: HTMLCanvasElement;
 let renderer: THREE.WebGLRenderer;
 let camera: THREE.PerspectiveCamera;
 let scene: THREE.Scene;
-let ballPhysics: CANNON.Body;
+let catModel: THREE.Group<THREE.Object3DEventMap>;
+let catBody: CANNON.Body;
+let balls: THREE.Mesh[];
+let ballPhysics: CANNON.Body[];
+let lightPhysics: CANNON.Body;
 let physicsWorld: CANNON.World;
 let capture = false;   // Whether or not to download an image of the canvas on the next redraw
+
+const keys: { [key: string]: boolean } = {};
 
 export const controller = {
     init,
     draw,
     resize
 };
+
+document.addEventListener('keydown', (event) => {
+    keys[event.key] = true;
+});
+
+document.addEventListener('keyup', (event) => {
+    keys[event.key] = false;
+})
 
 function init() {
     scene = new THREE.Scene();
@@ -34,15 +48,19 @@ function init() {
 
     const loader = new GLTFLoader().setPath('models/');
 
+    const ambLight = new THREE.AmbientLight(0xffffff, .75);
+    scene.add(ambLight);
+
     // Create physics world
     physicsWorld = new CANNON.World({
-        gravity: new CANNON.Vec3(0, -9.81, 0)
+        gravity: new CANNON.Vec3(0, -9.81, 0),
+        frictionGravity: new CANNON.Vec3(0, -9.81, 0)
     });
 
     // Add cat to the scene
     loader.load('cat_full_with_bones.glb', function (gltf) {
-        const model = gltf.scene;
-        scene.add(model)
+        catModel = gltf.scene;
+        scene.add(catModel)
         let mesh: THREE.SkinnedMesh<THREE.BufferGeometry<THREE.NormalBufferAttributes>, THREE.Material | THREE.Material[], THREE.Object3DEventMap>;
         gltf.scene.traverse((child) => {
             console.log(child.type);
@@ -52,11 +70,18 @@ function init() {
                 // scene.add(helper);
             }
         });
-        setupGui(model);
+        //setupGui(catModel);
     }, undefined, function (error) {
         console.log("???");
         console.error(error);
     });
+
+    // Cat Physics
+    catBody = new CANNON.Body({
+        mass: 100,
+        shape: new CANNON.Box(new CANNON.Vec3(.5, 1, 1)),
+    });
+    physicsWorld.addBody(catBody);
 
     createWorld();
     draw();
@@ -73,44 +98,120 @@ function createWorld(): void {
         }
     );
     const room = new THREE.Mesh(roomGeom, roomMats);
-    room.position.y = 8.5;
+    room.position.y = 5;
+    room.name = "room";
     scene.add(room);
 
     // Add room physics to physics world
+    //createRoomPhysics();
     const roomPhysics = new CANNON.Body({
         type: CANNON.Body.STATIC,
-        shape: new CANNON.Plane()
+        shape: new CANNON.Plane(),
     });
-    roomPhysics.position.y = -1.5;
+    roomPhysics.position.y = -5;
     roomPhysics.quaternion.setFromEuler(-Math.PI / 2, 0, 0);
     physicsWorld.addBody(roomPhysics);
 
     // Create light sphere
     const radius = .15;
-    const ballGeom = new THREE.SphereGeometry(radius);
-    const ballMats = new THREE.MeshBasicMaterial({ color: 0xfaffcf });
-    const lightBall = new THREE.Mesh(ballGeom, ballMats);
-    const light = new THREE.PointLight(0xfaffcf, 30);
+    // const ballGeom = new THREE.SphereGeometry(radius);
+    // const ballMats = new THREE.MeshBasicMaterial({ color: 0xfaffcf });
+    // const lightBall = new THREE.Mesh(ballGeom, ballMats);
+    const light = new THREE.PointLight(0xfaffcf, 100);
 
-    lightBall.add(light);
-    lightBall.position.set(5, 5.5, 0);
-    lightBall.name = "lightBall";
+    // lightBall.add(light);
+    // lightBall.position.set(1.1, 5.5, 0);
+    // lightBall.name = "lightBall";
 
-    scene.add(lightBall);
+    // scene.add(lightBall);
 
     // Add ball of light to physics world
-    ballPhysics = new CANNON.Body({
-        mass: 5,
-        shape: new CANNON.Sphere(radius)
+    lightPhysics = new CANNON.Body({
+        mass: .001,
+        shape: new CANNON.Sphere(radius),
     });
-    ballPhysics.position = new CANNON.Vec3(5, 5.5, 0);
-    physicsWorld.addBody(ballPhysics);
+    lightPhysics.position = new CANNON.Vec3(1.1, 5.5, 0);
+    physicsWorld.addBody(lightPhysics);
+
+
+    // Generate More Balls
+    balls = [];
+    ballPhysics = [];
+    for (let i = 0; i < dim; i++) {
+        for (let j = 0; j < dim; j++) {
+            const ball = new THREE.SphereGeometry(radius);
+            const mats = new THREE.MeshStandardMaterial({ color: Math.floor(Math.random() * (1 << 24)) })
+            const newBall = new THREE.Mesh(ball, mats);
+            newBall.position.set(i - (dim / 2) + .5, 5, j - (dim / 2) + .5);
+            newBall.castShadow = true;
+            balls.push(newBall);
+
+            scene.add(newBall);
+
+            const bPhys = new CANNON.Body({
+                mass: .001,
+                shape: new CANNON.Sphere(radius)
+            });
+            bPhys.position = new CANNON.Vec3(i - (dim / 2) + .5, 5, j - (dim / 2) + .5);
+            ballPhysics.push(bPhys);
+
+            physicsWorld.addBody(bPhys);
+        }
+    }
+
+    const rando = Math.floor(Math.random() * 400);
+    balls[rando].add(light);
+    balls[rando].material = new THREE.MeshBasicMaterial({ color: 0xfaffcf });
+}
+
+function createRoomPhysics() {
+    const wall1 = new CANNON.Body({
+        type: CANNON.Body.STATIC,
+        shape: new CANNON.Plane(),
+    });
+    wall1.position.set(0, 8.5, 0);
+    wall1.quaternion.setFromEuler(Math.PI / 2, 0, 0);
+    physicsWorld.addBody(wall1);
+}
+
+function updateCatMovement() {
+    const speed = 0.0075;
+    const turnSpd = 0.0075;
+
+    const movement = new CANNON.Vec3(0, 0, -1);
+    const rotateMove = catBody.quaternion.vmult(movement);
+
+    if (keys['w'])
+        catBody.position.vadd(rotateMove.scale(-speed), catBody.position);
+    if (keys['s'])
+        catBody.position.vadd(rotateMove.scale(speed), catBody.position);
+    if (keys['a']) {
+        const curAngle = new CANNON.Vec3();
+        catBody.quaternion.toEuler(curAngle);
+        curAngle.y += turnSpd;
+        catBody.quaternion.setFromEuler(curAngle.x, curAngle.y, curAngle.z);
+    }
+    if (keys['d']) {
+        const curAngle = new CANNON.Vec3();
+        catBody.quaternion.toEuler(curAngle);
+        curAngle.y -= turnSpd;
+        catBody.quaternion.setFromEuler(curAngle.x, curAngle.y, curAngle.z);
+    }
 }
 
 
 function draw(): void {
     physicsWorld.fixedStep();
-    scene.getObjectByName("lightBall").position.copy(new THREE.Vector3(ballPhysics.position.x, ballPhysics.position.y, ballPhysics.position.z));
+    updateCatMovement();
+    //scene.getObjectByName("lightBall").position.copy(new THREE.Vector3(lightPhysics.position.x, lightPhysics.position.y, lightPhysics.position.z));
+    if (catModel != undefined) {
+        catModel.position.copy(catBody.position);
+        catModel.quaternion.copy(catBody.quaternion);
+    }
+
+    for (let i = 0; i < balls.length; i++) {
+        balls[i].position.copy(ballPhysics[i].position);
+    }
 
     renderer.render(scene, camera);
 
@@ -158,6 +259,7 @@ function setupGui(model: THREE.Group<THREE.Object3DEventMap>) {
     gui.add(guiState, "Spine", -180.0, 180.0).name("Body rotation: ")
         .onChange(function (value: Number) {
             model.getObjectByName('Spine').rotation.z = Number(value) / 180.0 * Math.PI;
+            catBody.quaternion.setFromEuler(0, -Number(value) / 180.0 * Math.PI, 0);
         });
     gui.add(guiState, "Head", -180.0, 180.0).name("Head rotation: ")
         .onChange(function (value: Number) {
