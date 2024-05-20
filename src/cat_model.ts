@@ -1,6 +1,7 @@
 import GUI from 'lil-gui';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import * as THREE from 'three'
+import {Timer} from 'three/examples/jsm/misc/Timer.js'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import * as CANNON from 'cannon-es'
 
@@ -8,9 +9,17 @@ let canvas: HTMLCanvasElement;
 let renderer: THREE.WebGLRenderer;
 let camera: THREE.PerspectiveCamera;
 let scene: THREE.Scene;
+
+let timer: Timer;
+let mixer: THREE.AnimationMixer;
+
 let catModel: THREE.Group<THREE.Object3DEventMap>;
+let catRun: THREE.AnimationAction;
+
 let catBody: CANNON.Body;
+
 let balls: THREE.Mesh[];
+
 let ballPhysics: CANNON.Body[];
 let lightPhysics: CANNON.Body;
 let physicsWorld: CANNON.World;
@@ -41,6 +50,8 @@ function init() {
     camera.position.z = 10;
     renderer = new THREE.WebGLRenderer({ canvas });
 
+    timer = new Timer();
+
     const texLoader = new THREE.TextureLoader();
 
     const diffTex = texLoader.load('models/cat_full_body_texture.png');
@@ -58,19 +69,19 @@ function init() {
     });
 
     // Add cat to the scene
-    loader.load('cat_full_with_bones.glb', function (gltf) {
+    loader.load('s.glb', function (gltf) {
         catModel = gltf.scene;
+        const anims = gltf.animations;
         scene.add(catModel)
+        mixer = new THREE.AnimationMixer(catModel);
+        catRun = mixer.clipAction(anims[0]);
         let mesh: THREE.SkinnedMesh;
         gltf.scene.traverse((child) => {
             console.log(child.type);
             if (child.type === 'SkinnedMesh') {
                 mesh = child as THREE.SkinnedMesh;
-                // var helper = new THREE.SkeletonHelper(model);
-                // scene.add(helper);
             }
         });
-        //setupGui(catModel);
     }, undefined, function (error) {
         console.log("???");
         console.error(error);
@@ -174,17 +185,31 @@ function createRoomPhysics() {
     physicsWorld.addBody(wall1);
 }
 
+
+
 function updateCatMovement() {
     const speed = 0.0075;
     const turnSpd = 0.0075;
-
+    timer.update();
     const movement = new CANNON.Vec3(0, 0, -1);
     const rotateMove = catBody.quaternion.vmult(movement);
 
-    if (keys['w'])
+    if (keys['w']){
         catBody.position.vadd(rotateMove.scale(-speed), catBody.position);
-    if (keys['s'])
+        if (mixer != undefined && catRun != undefined){
+            timer.reset()
+            mixer.update(timer.getDelta());
+            catRun.play();
+        }
+    }
+    if (keys['s']){
         catBody.position.vadd(rotateMove.scale(speed), catBody.position);
+        if (mixer != undefined && catRun != undefined){
+            timer.reset()
+            mixer.update(timer.getDelta());
+            catRun.play();
+        }
+    }
     if (keys['a']) {
         const curAngle = new CANNON.Vec3();
         catBody.quaternion.toEuler(curAngle);
@@ -237,69 +262,68 @@ function resize() {
     camera.updateProjectionMatrix();
 }
 
-const buttons = {
-    screenshot: () => { capture = true; }
-};
+// const buttons = {
+//     screenshot: () => { capture = true; }
+// };
 
-const guiState = {
-    Spine: 0,
-    Head: 0,
-    RightForeLeg: 0,
-    LeftForeLeg: 0,
-    RightHindLeg: 0,
-    LeftHindLeg: 0,
-    Tail: 0
-};
+// const guiState = {
+//     Spine: 0,
+//     Head: 0,
+//     RightForeLeg: 0,
+//     LeftForeLeg: 0,
+//     RightHindLeg: 0,
+//     LeftHindLeg: 0,
+//     Tail: 0
+// };
 
-function setupGui(model: THREE.Group<THREE.Object3DEventMap>) {
-    const gui = new GUI();
-    gui.add(buttons, 'screenshot').name("Capture Screenshot");
+// function setupGui(model: THREE.Group<THREE.Object3DEventMap>) {
+//     const gui = new GUI();
+//     gui.add(buttons, 'screenshot').name("Capture Screenshot");
 
 
-    gui.add(guiState, "Spine", -180.0, 180.0).name("Body rotation: ")
-        .onChange(function (value: Number) {
-            model.getObjectByName('Spine').rotation.z = Number(value) / 180.0 * Math.PI;
-            catBody.quaternion.setFromEuler(0, -Number(value) / 180.0 * Math.PI, 0);
-        });
-    gui.add(guiState, "Head", -180.0, 180.0).name("Head rotation: ")
-        .onChange(function (value: Number) {
-            model.getObjectByName('Head').rotation.x = Number(value) / 180.0 * Math.PI;
-        });
-    gui.add(guiState, "RightForeLeg", -180.0, 180.0).name("RightForeLeg rotation: ")
-        .onChange(function (value: Number) {
-            const part = model.getObjectByName('RightForeLeg');
-            part.rotation.x = 0;
-            part.rotation.y = 0;
-            part.rotation.z = 0;
-            part.rotateZ(-0.56);
-            part.rotateX(Number(value) / 180.0 * Math.PI);
-        });
-    gui.add(guiState, "LeftForeLeg", -180.0, 180.0).name("LeftForeLeg rotation: ")
-        .onChange(function (value: Number) {
-            const part = model.getObjectByName('LeftForeLeg');
-            part.rotation.x = 0;
-            part.rotation.y = 0;
-            part.rotation.z = 0;
-            part.rotateZ(0.56);
-            part.rotateX(Number(value) / 180.0 * Math.PI);
-        });
-    gui.add(guiState, "RightHindLeg", -180.0, 180.0).name("RightHindLeg rotation: ")
-        .onChange(function (value: Number) {
-            const part = model.getObjectByName('RightHindLeg');
-            part.rotation.x = 0;
-            part.rotation.y = 0;
-            part.rotation.z = 0;
-            part.rotateZ(-0.56);
-            part.rotateX(Number(value) / 180.0 * Math.PI);
-        });
-    gui.add(guiState, "LeftHindLeg", -180.0, 180.0).name("LeftHindLeg rotation: ")
-        .onChange(function (value: Number) {
-            const part = model.getObjectByName('LeftHindLeg');
-            part.rotation.x = 0;
-            part.rotation.y = 0;
-            part.rotation.z = 0;
-            part.rotateZ(0.56);
-            part.rotateX(Number(value) / 180.0 * Math.PI);
-        });
-
-}
+//     gui.add(guiState, "Spine", -180.0, 180.0).name("Body rotation: ")
+//         .onChange(function (value: Number) {
+//             model.getObjectByName('Spine').rotation.z = Number(value) / 180.0 * Math.PI;
+//             catBody.quaternion.setFromEuler(0, -Number(value) / 180.0 * Math.PI, 0);
+//         });
+//     gui.add(guiState, "Head", -180.0, 180.0).name("Head rotation: ")
+//         .onChange(function (value: Number) {
+//             model.getObjectByName('Head').rotation.x = Number(value) / 180.0 * Math.PI;
+//         });
+//     gui.add(guiState, "RightForeLeg", -180.0, 180.0).name("RightForeLeg rotation: ")
+//         .onChange(function (value: Number) {
+//             const part = model.getObjectByName('RightForeLeg');
+//             part.rotation.x = 0;
+//             part.rotation.y = 0;
+//             part.rotation.z = 0;
+//             part.rotateZ(-0.56);
+//             part.rotateX(Number(value) / 180.0 * Math.PI);
+//         });
+//     gui.add(guiState, "LeftForeLeg", -180.0, 180.0).name("LeftForeLeg rotation: ")
+//         .onChange(function (value: Number) {
+//             const part = model.getObjectByName('LeftForeLeg');
+//             part.rotation.x = 0;
+//             part.rotation.y = 0;
+//             part.rotation.z = 0;
+//             part.rotateZ(0.56);
+//             part.rotateX(Number(value) / 180.0 * Math.PI);
+//         });
+//     gui.add(guiState, "RightHindLeg", -180.0, 180.0).name("RightHindLeg rotation: ")
+//         .onChange(function (value: Number) {
+//             const part = model.getObjectByName('RightHindLeg');
+//             part.rotation.x = 0;
+//             part.rotation.y = 0;
+//             part.rotation.z = 0;
+//             part.rotateZ(-0.56);
+//             part.rotateX(Number(value) / 180.0 * Math.PI);
+//         });
+//     gui.add(guiState, "LeftHindLeg", -180.0, 180.0).name("LeftHindLeg rotation: ")
+//         .onChange(function (value: Number) {
+//             const part = model.getObjectByName('LeftHindLeg');
+//             part.rotation.x = 0;
+//             part.rotation.y = 0;
+//             part.rotation.z = 0;
+//             part.rotateZ(0.56);
+//             part.rotateX(Number(value) / 180.0 * Math.PI);
+//         });
+// }
