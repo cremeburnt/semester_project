@@ -61,7 +61,7 @@ function init() {
     loader.load('cat_full_with_bones.glb', function (gltf) {
         catModel = gltf.scene;
         scene.add(catModel)
-        let mesh: THREE.SkinnedMesh<THREE.BufferGeometry<THREE.NormalBufferAttributes>, THREE.Material | THREE.Material[], THREE.Object3DEventMap>;
+        let mesh: THREE.SkinnedMesh;
         gltf.scene.traverse((child) => {
             console.log(child.type);
             if (child.type === 'SkinnedMesh') {
